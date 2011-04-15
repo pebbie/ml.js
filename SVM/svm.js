@@ -29,7 +29,11 @@ this.SVM = null;
     }
     
     SVM.clone = function(obj){
-        var result = {}
+        var result;
+        if(obj.length != undefined)
+            result = [];
+         else
+            result = {};
         for(a in obj){
             if(typeof(obj[a])=="object")
                 result[a] = SVM.clone(obj[a]);
@@ -1110,6 +1114,7 @@ this.SVM = null;
 		return (r1-r2)/2;
 	}
     
+    //SVC_Q Kernel
     SVM.SVC_Q = function(prob, param, y_)
     {
         SVM.Kernel.call(this);
@@ -1147,11 +1152,12 @@ this.SVM = null;
 		_=this.QD[i]; this.QD[i]=this.QD[j]; this.QD[j]=_;
 	}
 
-    
+    //ONECLASS_Q Kernel
     SVM.ONECLASS_Q = function(prob, param)
     {
         SVM.Kernel.call(this);
         this.super(prob.l, prob.x, param);
+        
         this.cache = new SVM.Cache(prob.l, param.cache_size*(1<<20));
         this.QD = SVM.arr(prob.l, 0.0);
         for(var i=0; i<prob.l; ++i)
@@ -1162,7 +1168,83 @@ this.SVM = null;
     SVM.ONECLASS_Q.prototype.constructor = SVM.ONECLASS_Q;
     SVM.ONECLASS_Q.prototype.super = SVM.Kernel;
     
-    //TODO SVM.ONECLASS_Q
+    SVM.ONECLASS_Q.prototype.get_Q = function(i, len)
+	{
+		var data = SVM.arr(1, Array);
+		var start, j;
+		if((start = this.cache.get_data(i,data,len)) < len){
+			for(j=start; j<len; j++)
+				data[0][j] = this.kernel_function(i,j);
+		}
+		return data[0];
+	}
+    
+    SVM.ONECLASS_Q.prototype.get_QD = function()
+	{
+		return this.QD;
+	}
+    
+    SVM.ONECLASS_Q.prototype.swap_index = function(i, j)
+	{
+		this.cache.swap_index(i,j);
+		this.super.swap_index(i,j);
+		_=QD[i]; QD[i]=QD[j]; QD[j]=_;
+	}
+    
+    //SVR_Q Kernel
+    SVM.SVR_Q = function(prob, param)
+    {
+        SVM.Kernel.call(this)
+        this.super(prob.l, prob.x, param);
+        
+        this.l = prob.l;
+        this.cache = new SVM.Cache(l, param.cache_size*(1<<20));
+        this.QD = SVM.arr(2*this.l, 0.0);
+        this.sign = SVM.arr(2*this.l, 0);
+        this.index = SVM.arr(2*this.l, 0);
+        for(var k=0; k<this.l; ++k){
+            this.sign[k] = 1;
+			this.sign[k+l] = -1;
+			this.index[k] = k;
+			this.index[k+l] = k;
+			this.QD[k] = this.kernel_function(k,k);
+			this.QD[k+l] = this.QD[k];
+        }
+        this.buffer = SVM.arr([2, 2*prob.l], 0.0);
+		this.next_buffer = 0;
+    }
+    
+    SVM.SVR_Q.prototype = new SVM.Kernel();
+    SVM.SVR_Q.prototype.constructor = SVM.SVR_Q;
+    SVM.SVR_Q.prototype.super = SVM.Kernel;
+    
+    SVM.SVR_Q.prototype.swap_index = function(i, j)
+	{
+		_=sign[i]; sign[i]=sign[j]; sign[j]=_;
+		_=index[i]; index[i]=index[j]; index[j]=_;
+		_=QD[i]; QD[i]=QD[j]; QD[j]=_;
+	}
+    
+    SVM.SVR_Q.prototype.get_Q = function(i, len)
+	{
+		var data = SVM.arr(1, Array);
+		var j, real_i = this.index[i];
+		if(this.cache.get_data(real_i, data, this.l) < this.l)
+		{
+			for(j=0; j<this.l; j++)
+				data[0][j] = this.kernel_function(real_i,j);
+		}
+
+		// reorder and copy
+		var buf = SVM.clone(this.buffer[this.next_buffer]);
+		this.next_buffer = 1 - this.next_buffer;
+		var si = this.sign[i];
+		for(j=0; j<len; j++)
+			buf[j] = si * sign[j] * data[0][this.index[j]];
+		return buf;
+	}
+    
+    SVM.SVR_Q.prototype.get_QD = function(){ return this.QD; }
     
     //main svm class
     
@@ -1176,12 +1258,11 @@ this.SVM = null;
     SVM.solve_c_svc = function(prob, param, alpha, si, Cp, Cn)
     {
         var l = prob.l;
-		var minus_ones = SVM.arr(l, 0.0);
+		var minus_ones = SVM.arr(this.l, 0.0);
 		var y = SVM.arr(l, 0);
 
 		var i;
-
-		for(var i=0; i<l; i++){
+		for(i=0; i<l; i++){
 			alpha[i] = 0;
 			minus_ones[i] = -1;
 			if(prob.y[i] > 0) y[i] = +1; else y[i] = -1;
