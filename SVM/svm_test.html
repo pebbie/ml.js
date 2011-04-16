@@ -8,8 +8,19 @@
         <h1>libsvmjs - Support Vector Machine Library in JavaScript</h1>
         <p>
         	<h2>ported from libsvm-3.1 (java version)</h2>
+            <textarea id="log" cols="80" rows="20"></textarea>
             <script type="text/javascript">
-                
+                function log(msg){
+                    document.getElementById('log').innerHTML += msg+'\n';
+                }
+                SVM.info = log;
+                problem = new SVM.Problem([1,-1], [[{index:0, value:1},{index:1, value:0}],[{index:0, value:-1},{index:1,value:0}]]);
+                param = new SVM.Parameter();
+                model = SVM.train(problem, param);
+                for(i in model){
+                    log(i+' '+model[i]);
+                }
+                log(SVM.predict(model, [{index:0, value:1},{index:1,value:1}]));
             </script>
         </p>
     </body>
